@@ -16,21 +16,28 @@ export function useIssues(userId?: string) {
     setLoading(true)
     setError(null)
 
-    let query = supabase
-      .from('issues')
-      .select('*, profiles(full_name, phone, avatar_url)')
-      .order('created_at', { ascending: false })
-
-    if (userId) {
-      query = query.eq('reported_by', userId)
-    }
-
-    const { data, error } = await query
-
-    if (error) {
-      setError(error.message)
-    } else {
-      setIssues((data as unknown as Issue[]) ?? [])
+    try {
+      if (userId) {
+        // Citizen view: fetch own issues via service-role API route
+        const res = await fetch(`/api/issues?userId=${userId}`)
+        const json = await res.json()
+        if (!res.ok) {
+          setError(json.error ?? 'Failed to fetch issues')
+        } else {
+          setIssues((json.data as Issue[]) ?? [])
+        }
+      } else {
+        // Admin view: fetch ALL issues via service-role API route
+        const res = await fetch('/api/issues')
+        const json = await res.json()
+        if (!res.ok) {
+          setError(json.error ?? 'Failed to fetch issues')
+        } else {
+          setIssues((json.data as Issue[]) ?? [])
+        }
+      }
+    } catch (err: any) {
+      setError(err.message ?? 'Network error')
     }
 
     setLoading(false)
@@ -39,6 +46,7 @@ export function useIssues(userId?: string) {
   useEffect(() => {
     fetchIssues()
 
+    // Real-time subscription for live updates
     const channel = supabase
       .channel(`issues-changes-${userId ?? 'all'}`)
       .on(
@@ -71,6 +79,7 @@ export function useIssues(userId?: string) {
   return { issues, loading, error, refetch: fetchIssues }
 }
 
+
 export function useIssue(id: string) {
   const [issue, setIssue] = useState<Issue | null>(null)
   const [loading, setLoading] = useState(true)
@@ -84,7 +93,7 @@ export function useIssue(id: string) {
         .from('issues')
         .select(`
           *,
-          profiles(full_name, phone, avatar_url),
+          profiles!issues_reported_by_fkey(full_name, phone, avatar_url),
           issue_status_logs(*)
         `)
         .eq('id', id)
@@ -147,7 +156,7 @@ export function useIssue(id: string) {
       .from('issues')
       .select(`
         *,
-        profiles(full_name, phone, avatar_url),
+        profiles!issues_reported_by_fkey(full_name, phone, avatar_url),
         issue_status_logs(*)
       `)
       .eq('id', id)

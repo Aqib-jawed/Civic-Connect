@@ -34,31 +34,27 @@ export default function RegisterPage() {
   const onSubmit = async (values: FormValues) => {
     setLoading(true)
     try {
-      // Step 1 — sign up (trigger will auto-create profile)
-      const { data, error } = await (supabase as any).auth.signUp({
-        email:    values.email,
-        password: values.password,
-        options: {
-          data: {
-            full_name: values.full_name,
-            phone:     values.phone ?? null,
-            role:      'citizen',
-          },
-        },
+      // Step 1 — Create user via server-side API (uses service role, auto-confirms email)
+      const res = await fetch('/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email:     values.email,
+          password:  values.password,
+          full_name: values.full_name,
+          phone:     values.phone ?? null,
+        }),
       })
 
-      if (error) {
-        notify.error(error.message)
+      const result = await res.json()
+
+      if (!res.ok) {
+        notify.error(result.error ?? 'Registration failed. Please try again.')
         return
       }
 
-      if (!data.user) {
-        notify.error('Signup failed. Please try again.')
-        return
-      }
-
-      // Step 2 — sign in immediately
-      const { error: signInError } = await (supabase as any).auth.signInWithPassword({
+      // Step 2 — Sign in immediately with the anon client
+      const { error: signInError } = await supabase.auth.signInWithPassword({
         email:    values.email,
         password: values.password,
       })

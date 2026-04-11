@@ -11,11 +11,10 @@ import type { IssueFormData } from '@/types'
 export default function ReportIssuePage() {
   const router = useRouter()
   const supabase = createClient()
-  const { user, profile } = useAuth()   // user is from auth (always set), profile from DB (may be null)
+  const { user, profile } = useAuth()
   const [loading, setLoading] = useState(false)
 
   const handleSubmit = async (data: IssueFormData) => {
-    // Use user.id directly as it comes from Supabase Auth — always reliable
     const userId = user?.id ?? profile?.id
     if (!userId) {
       notify.error('You must be logged in to report an issue')
@@ -28,8 +27,8 @@ export default function ReportIssuePage() {
       const imageUrls: string[] = []
       const bucket = process.env.NEXT_PUBLIC_STORAGE_BUCKET_ISSUES
 
-      // Upload images if bucket is configured
-      if (bucket) {
+      // Upload images via Supabase client (storage allows authenticated uploads)
+      if (bucket && data.images?.length > 0) {
         for (const file of data.images) {
           const ext = file.name.split('.').pop()
           const fileName = `${userId}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
@@ -39,43 +38,40 @@ export default function ReportIssuePage() {
             .upload(fileName, file, { upsert: false })
 
           if (uploadError) {
-            console.error('Upload error:', uploadError)
-            throw new Error(`Image upload failed: ${uploadError.message}`)
+            console.warn('Image upload failed (continuing without image):', uploadError.message)
+            // Don't throw — allow issue submission even if image upload fails
+          } else {
+            const { data: { publicUrl } } = supabase.storage
+              .from(bucket)
+              .getPublicUrl(fileName)
+            imageUrls.push(publicUrl)
           }
-
-          const { data: { publicUrl } } = supabase.storage
-            .from(bucket)
-            .getPublicUrl(fileName)
-
-          imageUrls.push(publicUrl)
         }
-      } else {
-        // No bucket configured — store filename placeholders
-        console.warn('NEXT_PUBLIC_STORAGE_BUCKET_ISSUES not set — skipping image upload')
-        data.images.forEach(f => imageUrls.push(f.name))
       }
 
-      const insertPayload = {
-        reported_by: userId,
-        category: data.category as string,
-        title: data.title,
-        description: data.description ?? null,
-        latitude: data.latitude,
-        longitude: data.longitude,
-        address: data.address ?? null,
-        images: imageUrls,
-        severity: data.severity as string,
-        is_anonymous: data.is_anonymous,
-        status: 'submitted' as string,
-      }
+      // Submit issue via server-side API (uses service role — bypasses RLS)
+      const res = await fetch('/api/issues', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          reported_by:  userId,
+          category:     data.category,
+          title:        data.title,
+          description:  data.description ?? null,
+          latitude:     data.latitude,
+          longitude:    data.longitude,
+          address:      data.address ?? null,
+          images:       imageUrls,
+          severity:     data.severity ?? 'medium',
+          is_anonymous: data.is_anonymous ?? false,
+        }),
+      })
 
-      const { error: insertError } = await supabase
-        .from('issues')
-        .insert(insertPayload as any)
+      const result = await res.json()
 
-      if (insertError) {
-        console.error('Insert error:', insertError)
-        throw new Error(insertError.message)
+      if (!res.ok) {
+        console.error('Issue submit error:', result)
+        throw new Error(result.error ?? 'Failed to submit issue')
       }
 
       notify.success('Issue reported successfully! 🎉')
@@ -102,4 +98,4 @@ export default function ReportIssuePage() {
       <IssueForm onSubmit={handleSubmit} loading={loading} />
     </div>
   )
-}
+}

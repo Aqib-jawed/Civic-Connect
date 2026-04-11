@@ -78,10 +78,7 @@ export default function IssueForm({ onSubmit, loading }: IssueFormProps) {
       notify.error('GPS location is required')
       return
     }
-    if (files.length === 0) {
-      notify.error('Please upload at least one photo')
-      return
-    }
+    // Photos are optional — encouraged but not required
 
     const addressParts = [location.city, location.state, location.pincode].filter(Boolean)
     const formattedAddress = addressParts.length ? addressParts.join(', ') : undefined
@@ -242,7 +239,7 @@ export default function IssueForm({ onSubmit, loading }: IssueFormProps) {
             <div className="rounded-xl border border-slate-700 bg-slate-800/50 p-5">
               <h3 className="font-heading text-base font-semibold mb-1">📷 Upload Photos</h3>
               <p className="text-xs text-slate-400 mb-4">
-                At least 1 photo required. Clear images help field teams assess the issue.
+                Photos are optional but help field teams assess the issue faster.
               </p>
               <ImageUploader onFilesChange={setFiles} />
             </div>
@@ -285,7 +282,7 @@ export default function IssueForm({ onSubmit, loading }: IssueFormProps) {
                 variant="success"
                 size="lg"
                 loading={loading}
-                disabled={files.length === 0 || loading}
+                disabled={loading}
               >
                 {loading ? 'Submitting…' : 'Submit Report ✓'}
               </Button>
